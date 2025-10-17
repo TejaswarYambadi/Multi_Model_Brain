@@ -19,7 +19,26 @@ if 'vector_db' not in st.session_state:
 if 'gemini_client' not in st.session_state:
     st.session_state.gemini_client = GeminiClient()
 if 'processed_files' not in st.session_state:
-    st.session_state.processed_files = []
+    # Rebuild processed files list from database metadata
+    processed_files = []
+    for i, metadata in enumerate(st.session_state.vector_db.metadata):
+        filename = metadata.get('filename', f'Document {i+1}')
+        file_type = metadata.get('type', 'unknown')
+        chunk_id = metadata.get('chunk_id', 0)
+        
+        # Only add unique files (first chunk of each)
+        if chunk_id == 0 or 'chunk_id' not in metadata:
+            if filename not in [f['name'] for f in processed_files]:
+                # Get the content for preview
+                content_idx = i
+                if content_idx < len(st.session_state.vector_db.documents):
+                    content = st.session_state.vector_db.documents[content_idx]
+                    processed_files.append({
+                        'name': filename,
+                        'type': file_type,
+                        'content_preview': content[:200] + "..." if len(content) > 200 else content
+                    })
+    st.session_state.processed_files = processed_files
 
 # Initialize processors
 @st.cache_resource
@@ -131,8 +150,8 @@ with st.sidebar:
         
         if st.button("🗑️ Clear All"):
             st.session_state.processed_files = []
-            st.session_state.vector_db = VectorDatabase()
-            st.success("All files cleared!")
+            st.session_state.vector_db.clear_all()
+            st.success("All files cleared from database!")
             st.rerun()
 
 # Main content area for queries

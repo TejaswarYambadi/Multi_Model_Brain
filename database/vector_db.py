@@ -4,13 +4,14 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from typing import List, Dict, Any
 import pickle
 import os
+from database.db_schema import DatabaseSchema
 
 class VectorDatabase:
-    """FAISS-based vector database for semantic search"""
+    """FAISS-based vector database for semantic search with PostgreSQL persistence"""
     
     def __init__(self):
         """
-        Initialize the vector database with TF-IDF vectorization
+        Initialize the vector database with TF-IDF vectorization and PostgreSQL persistence
         """
         self.vectorizer = TfidfVectorizer(
             max_features=512,
@@ -28,9 +29,35 @@ class VectorDatabase:
         self.metadata = []
         self.is_fitted = False
         
+        # Initialize database
+        try:
+            self.db = DatabaseSchema()
+            self._load_from_database()
+        except Exception as e:
+            print(f"Warning: Could not initialize database persistence: {e}")
+            self.db = None
+    
+    def _load_from_database(self):
+        """Load existing documents from database"""
+        if not self.db:
+            return
+            
+        try:
+            stored_docs = self.db.load_all_documents()
+            if stored_docs:
+                for doc in stored_docs:
+                    self.documents.append(doc['content'])
+                    self.metadata.append(doc['metadata'])
+                
+                # Rebuild index with loaded documents
+                self._rebuild_index()
+                print(f"Loaded {len(stored_docs)} documents from database")
+        except Exception as e:
+            print(f"Error loading from database: {e}")
+    
     def add_document(self, text: str, metadata: Dict[str, Any] = None):
         """
-        Add a document to the vector database
+        Add a document to the vector database and persist to PostgreSQL
         
         Args:
             text: Document text content
@@ -41,7 +68,7 @@ class VectorDatabase:
             chunks = self._chunk_text(text, max_chunk_size=500)
             
             for i, chunk in enumerate(chunks):
-                # Store document and metadata first
+                # Store document and metadata
                 chunk_metadata = metadata.copy() if metadata else {}
                 if len(chunks) > 1:
                     chunk_metadata['chunk_id'] = i
@@ -49,8 +76,15 @@ class VectorDatabase:
                 
                 self.documents.append(chunk)
                 self.metadata.append(chunk_metadata)
+                
+                # Save to database if available
+                if self.db:
+                    try:
+                        self.db.save_document(chunk, chunk_metadata)
+                    except Exception as e:
+                        print(f"Warning: Could not save document to database: {e}")
             
-            # Refit vectorizer and rebuild index with all documents
+            # Rebuild index with all documents
             self._rebuild_index()
                 
         except Exception as e:
@@ -125,6 +159,19 @@ class VectorDatabase:
             
         except Exception as e:
             raise Exception(f"Error searching vector database: {str(e)}")
+    
+    def clear_all(self):
+        """Clear all documents from memory and database"""
+        self.documents = []
+        self.metadata = []
+        self.index = faiss.IndexFlatIP(self.dimension)
+        self.is_fitted = False
+        
+        if self.db:
+            try:
+                self.db.clear_all_documents()
+            except Exception as e:
+                print(f"Warning: Could not clear database: {e}")
     
     def _chunk_text(self, text: str, max_chunk_size: int = 500) -> List[str]:
         """

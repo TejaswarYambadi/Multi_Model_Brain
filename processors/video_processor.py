@@ -1,7 +1,7 @@
 import os
 import tempfile
 from pathlib import Path
-from moviepy.editor import VideoFileClip
+from moviepy.video.io.VideoFileClip import VideoFileClip
 from processors.audio_processor import AudioProcessor
 from utils.gemini_client import GeminiClient
 

@@ -1,6 +1,6 @@
 import numpy as np
 import faiss
-from sentence_transformers import SentenceTransformer
+from sklearn.feature_extraction.text import TfidfVectorizer
 from typing import List, Dict, Any
 import pickle
 import os
@@ -8,15 +8,17 @@ import os
 class VectorDatabase:
     """FAISS-based vector database for semantic search"""
     
-    def __init__(self, model_name: str = 'all-MiniLM-L6-v2'):
+    def __init__(self):
         """
-        Initialize the vector database
-        
-        Args:
-            model_name: Name of the sentence transformer model to use
+        Initialize the vector database with TF-IDF vectorization
         """
-        self.model = SentenceTransformer(model_name)
-        self.dimension = self.model.get_sentence_embedding_dimension()
+        self.vectorizer = TfidfVectorizer(
+            max_features=512,
+            ngram_range=(1, 2),
+            min_df=1,
+            stop_words='english'
+        )
+        self.dimension = 512
         
         # Initialize FAISS index
         self.index = faiss.IndexFlatIP(self.dimension)  # Inner Product for cosine similarity
@@ -24,6 +26,7 @@ class VectorDatabase:
         # Store documents and metadata
         self.documents = []
         self.metadata = []
+        self.is_fitted = False
         
     def add_document(self, text: str, metadata: Dict[str, Any] = None):
         """
@@ -34,20 +37,11 @@ class VectorDatabase:
             metadata: Optional metadata dictionary
         """
         try:
-            # Split text into chunks if it's too long (to avoid token limits)
+            # Split text into chunks if it's too long
             chunks = self._chunk_text(text, max_chunk_size=500)
             
             for i, chunk in enumerate(chunks):
-                # Generate embedding
-                embedding = self.model.encode([chunk])[0]
-                
-                # Normalize embedding for cosine similarity
-                embedding = embedding / np.linalg.norm(embedding)
-                
-                # Add to FAISS index
-                self.index.add(np.array([embedding], dtype=np.float32))
-                
-                # Store document and metadata
+                # Store document and metadata first
                 chunk_metadata = metadata.copy() if metadata else {}
                 if len(chunks) > 1:
                     chunk_metadata['chunk_id'] = i
@@ -55,9 +49,37 @@ class VectorDatabase:
                 
                 self.documents.append(chunk)
                 self.metadata.append(chunk_metadata)
+            
+            # Refit vectorizer and rebuild index with all documents
+            self._rebuild_index()
                 
         except Exception as e:
             raise Exception(f"Error adding document to vector database: {str(e)}")
+    
+    def _rebuild_index(self):
+        """Rebuild the FAISS index with all documents"""
+        if not self.documents:
+            return
+            
+        # Fit vectorizer on all documents
+        try:
+            tfidf_matrix = self.vectorizer.fit_transform(self.documents)
+            
+            # Convert to dense numpy array and normalize
+            embeddings = tfidf_matrix.toarray().astype(np.float32)
+            
+            # Normalize for cosine similarity
+            norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+            norms[norms == 0] = 1  # Avoid division by zero
+            embeddings = embeddings / norms
+            
+            # Rebuild FAISS index
+            self.index = faiss.IndexFlatIP(self.dimension)
+            self.index.add(embeddings)
+            self.is_fitted = True
+            
+        except Exception as e:
+            raise Exception(f"Error rebuilding index: {str(e)}")
     
     def search(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
         """
@@ -71,16 +93,20 @@ class VectorDatabase:
             List of search results with content, metadata, and scores
         """
         try:
-            if len(self.documents) == 0:
+            if len(self.documents) == 0 or not self.is_fitted:
                 return []
             
-            # Generate query embedding
-            query_embedding = self.model.encode([query])[0]
-            query_embedding = query_embedding / np.linalg.norm(query_embedding)
+            # Transform query using the fitted vectorizer
+            query_vector = self.vectorizer.transform([query]).toarray().astype(np.float32)
+            
+            # Normalize query vector
+            query_norm = np.linalg.norm(query_vector)
+            if query_norm > 0:
+                query_vector = query_vector / query_norm
             
             # Search in FAISS index
             scores, indices = self.index.search(
-                np.array([query_embedding], dtype=np.float32), 
+                query_vector, 
                 min(top_k, len(self.documents))
             )
             

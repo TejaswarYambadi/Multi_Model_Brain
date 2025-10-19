@@ -19,23 +19,23 @@ class VectorDatabase:
             min_df=1,
             stop_words='english'
         )
-        self.dimension = 512
-        
-        # Initialize FAISS index
-        self.index = faiss.IndexFlatIP(self.dimension)  # Inner Product for cosine similarity
+        self.dimension = None  # Will be set dynamically
+        self.index = None  # Will be created when first document is added
         
         # Store documents and metadata
         self.documents = []
         self.metadata = []
         self.is_fitted = False
         
-        # Initialize database
-        try:
-            self.db = DatabaseSchema()
-            self._load_from_database()
-        except Exception as e:
-            print(f"Warning: Could not initialize database persistence: {e}")
-            self.db = None
+        # Initialize database (optional for local use)
+        self.db = None
+        if os.getenv("DATABASE_URL"):
+            try:
+                self.db = DatabaseSchema()
+                self._load_from_database()
+            except Exception as e:
+                print(f"Warning: Could not initialize database persistence: {e}")
+                self.db = None
     
     def _load_from_database(self):
         """Load existing documents from database"""
@@ -102,12 +102,15 @@ class VectorDatabase:
             # Convert to dense numpy array and normalize
             embeddings = tfidf_matrix.toarray().astype(np.float32)
             
+            # Set dimension based on actual TF-IDF output
+            self.dimension = embeddings.shape[1]
+            
             # Normalize for cosine similarity
             norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
             norms[norms == 0] = 1  # Avoid division by zero
             embeddings = embeddings / norms
             
-            # Rebuild FAISS index
+            # Create new FAISS index with correct dimension
             self.index = faiss.IndexFlatIP(self.dimension)
             self.index.add(embeddings)
             self.is_fitted = True
@@ -164,7 +167,8 @@ class VectorDatabase:
         """Clear all documents from memory and database"""
         self.documents = []
         self.metadata = []
-        self.index = faiss.IndexFlatIP(self.dimension)
+        self.index = None
+        self.dimension = None
         self.is_fitted = False
         
         if self.db:
@@ -232,6 +236,6 @@ class VectorDatabase:
         """
         return {
             'total_documents': len(self.documents),
-            'total_vectors': self.index.ntotal,
-            'dimension': self.dimension
+            'total_vectors': self.index.ntotal if self.index else 0,
+            'dimension': self.dimension or 0
         }

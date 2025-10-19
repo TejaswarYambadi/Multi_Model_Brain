@@ -14,77 +14,115 @@ class VideoProcessor:
     
     def process(self, file_path: str) -> str:
         """
-        Process a video file and extract content
+        Complete pin-to-pin video processing: video -> audio -> text
         
         Args:
             file_path: Path to the video file
             
         Returns:
-            Video analysis and audio transcript
+            Complete video-to-text conversion with full transcript
         """
         try:
-            content_parts = []
             filename = Path(file_path).name
             
-            # First, try to analyze the video directly with Gemini (if supported)
-            try:
-                video_analysis = self.gemini_client.analyze_video(file_path)
-                if video_analysis:
-                    content_parts.append(f"Video Analysis:\n{video_analysis}")
-            except Exception as e:
-                print(f"Direct video analysis failed: {e}")
+            # Step 1: Extract video metadata
+            video_metadata = self._get_video_metadata(file_path)
             
-            # Extract audio and transcribe
-            try:
-                audio_transcript = self._extract_and_transcribe_audio(file_path)
-                if audio_transcript:
-                    content_parts.append(f"Audio Transcript:\n{audio_transcript}")
-            except Exception as e:
-                print(f"Audio extraction failed: {e}")
+            # Step 2: Extract audio from video and convert to text (pin-to-pin)
+            print(f"Processing video: {filename}")
+            print("Step 1: Extracting audio from video...")
+            audio_transcript = self._extract_and_transcribe_audio_complete(file_path)
             
-            # Combine all content
-            if content_parts:
-                full_content = f"Video: {filename}\n\n" + "\n\n".join(content_parts)
-                return full_content
-            else:
-                return f"Video: {filename}\n\nUnable to extract content from video file."
+            # Step 3: Format as complete text document
+            result = f"VIDEO FILE ANALYSIS\n"
+            result += f"File: {filename}\n"
+            result += f"Duration: {video_metadata['duration']} seconds\n"
+            result += f"Resolution: {video_metadata['resolution']}\n"
+            result += f"{'='*50}\n\n"
+            result += f"COMPLETE TRANSCRIPT (Video -> Audio -> Text):\n\n{audio_transcript}\n\n"
+            result += f"{'='*50}\n"
+            result += f"Processing Status: Complete video-to-text conversion successful"
+            
+            return result
                 
         except Exception as e:
             raise Exception(f"Error processing video {file_path}: {str(e)}")
     
-    def _extract_and_transcribe_audio(self, video_path: str) -> str:
+    def _extract_and_transcribe_audio_complete(self, video_path: str) -> str:
         """
-        Extract audio from video and transcribe it
+        Complete video-to-audio-to-text conversion (pin-to-pin)
         
         Args:
             video_path: Path to video file
             
         Returns:
-            Audio transcript
+            Complete audio transcript from video
         """
         temp_audio_path = None
+        video = None
         try:
-            # Load video and extract audio
+            print("Step 2: Loading video file...")
             video = VideoFileClip(video_path)
             
+            # Check if video has audio
+            if video.audio is None:
+                return "No audio track found in video - video contains no sound"
+            
+            print("Step 3: Extracting audio track...")
             # Create temporary audio file
             temp_audio_path = video_path.rsplit('.', 1)[0] + '_temp_audio.wav'
             
-            # Extract audio to temporary file
-            video.audio.write_audiofile(temp_audio_path, verbose=False, logger=None)
-            video.close()
+            # Extract complete audio to temporary file
+            video.audio.write_audiofile(temp_audio_path, logger=None)
             
-            # Transcribe the audio
-            transcript = self.audio_processor._transcribe_audio(temp_audio_path)
+            print("Step 4: Converting audio to text (pin-to-pin)...")
+            # Use complete audio-to-text conversion
+            transcript = self.audio_processor._complete_audio_to_text(temp_audio_path)
             
+            print("Step 5: Video-to-text conversion complete!")
             return transcript
             
         except Exception as e:
-            raise Exception(f"Error extracting audio from video: {str(e)}")
+            raise Exception(f"Error in video-to-text conversion: {str(e)}")
         finally:
+            # Close video file
+            if video:
+                try:
+                    video.close()
+                except:
+                    pass
+            
             # Clean up temporary audio file
             if temp_audio_path and os.path.exists(temp_audio_path):
                 try:
                     os.unlink(temp_audio_path)
                 except:
                     pass
+    
+    def _get_video_metadata(self, video_path: str) -> dict:
+        """
+        Extract video metadata
+        
+        Args:
+            video_path: Path to video file
+            
+        Returns:
+            Dictionary with video metadata
+        """
+        try:
+            video = VideoFileClip(video_path)
+            metadata = {
+                'duration': video.duration,
+                'resolution': f"{video.w}x{video.h}",
+                'fps': video.fps,
+                'has_audio': video.audio is not None
+            }
+            video.close()
+            return metadata
+        except Exception:
+            return {
+                'duration': 'Unknown',
+                'resolution': 'Unknown',
+                'fps': 'Unknown',
+                'has_audio': 'Unknown'
+            }

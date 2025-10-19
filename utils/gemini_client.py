@@ -1,7 +1,10 @@
 import os
+from dotenv import load_dotenv
 import logging
 from google import genai
 from google.genai import types
+
+load_dotenv()
 
 class GeminiClient:
     """Client for interacting with Gemini AI models"""
@@ -133,3 +136,7 @@ Answer:"""
             
         except Exception as e:
             raise Exception(f"Error generating summary: {str(e)}")
+'''if __name__ == "__main__":
+    client = GeminiClient()
+    summary = client.summarize_content("Gemini is a multimodal AI model developed by Google DeepMind.")
+    print(summary)'''

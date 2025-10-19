@@ -23,8 +23,8 @@
 ### Installation
 ```bash
 # Clone repository
-git clone <your-repo-url>
-cd MultiModalBrain
+git clone https://github.com/TejaswarYambadi/Multi_Model_Brain.git
+cd Multi_Model_Brain
 
 # Create virtual environment
 python -m venv venv
@@ -171,8 +171,8 @@ brew install ffmpeg
 #### Step 3: Clone and Setup Project
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/MultiModalBrain.git
-cd MultiModalBrain
+git clone https://github.com/TejaswarYambadi/Multi_Model_Brain.git
+cd Multi_Model_Brain
 
 # Create virtual environment
 python -m venv venv
